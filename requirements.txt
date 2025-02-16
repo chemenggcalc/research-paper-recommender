@@ -1,0 +1,12 @@
+flask==2.3.3
+flask-cors==4.0.0
+arxiv==1.4.3
+sentence-transformers==2.6.1
+pandas==2.1.4
+aiohttp==3.9.3
+gunicorn==21.2.0
+scikit-learn==1.4.0
+numpy==1.26.3
+python-dotenv==1.0.1
+biopython==1.83
+lxml==5.1.0
