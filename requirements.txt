@@ -10,3 +10,4 @@ numpy==1.26.3
 python-dotenv==1.0.1
 biopython==1.83
 lxml==5.1.0
+uvicorn
