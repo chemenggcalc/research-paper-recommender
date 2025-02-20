@@ -16,14 +16,14 @@ from Bio import Entrez
 
 # Initialize Flask application
 app = Flask(__name__)
-CORS(app, resources={r"/search": {"origins": "*"}})  # Allow all origins (adjust for production)
+CORS(app, resources={r"/search": {"origins": "*"}})
 logging.basicConfig(level=logging.INFO)
 
 # Configuration
 MODEL_NAME = 'paraphrase-MiniLM-L3-v2'
-API_KEY = os.getenv('API_KEY', 'my-secret-api-key-123')  # Custom API key from env or default
+API_KEY = os.getenv('API_KEY', 'my-secret-api-key-123')
 MAX_RESULTS = 10
-PAPER_SOURCES = ['arxiv', 'pubmed', 'semanticscholar', 'crossref']
+PAPER_SOURCES = ['arxiv', 'pubmed', 'semanticscholar', 'crossref']  # Updated to match implemented sources
 
 # Initialize model and components
 model = SentenceTransformer(MODEL_NAME)
@@ -48,7 +48,7 @@ def fetch_arxiv_papers(query: str) -> list:
 
 async def fetch_pubmed_papers(query: str) -> list:
     try:
-        Entrez.email = os.getenv('PUBMED_EMAIL', 'your.email@example.com')  # Required for PubMed
+        Entrez.email = os.getenv('PUBMED_EMAIL', 'your.email@example.com')
         handle = Entrez.esearch(db="pubmed", term=query, retmax=MAX_RESULTS)
         record = Entrez.read(handle)
         id_list = record["IdList"]
@@ -65,7 +65,7 @@ async def fetch_pubmed_papers(query: str) -> list:
                         root = etree.fromstring(xml_data.encode())
                         papers.append({
                             "title": root.findtext('.//ArticleTitle') or "No title",
-                            "abstract": " ".join([e.text for e in root.findall('.//AbstractText') if e.text]),
+                            "abstract": " ".join([e.text for e in root.findall('.//AbstractText') if e.text]) or "No abstract",
                             "url": f"https://pubmed.ncbi.nlm.nih.gov/{pubmed_id}/",
                             "source": "PubMed",
                             "authors": ", ".join([
@@ -76,7 +76,7 @@ async def fetch_pubmed_papers(query: str) -> list:
                             "published": root.findtext('.//PubMedPubDate/Year') or ""
                         })
                 except Exception as e:
-                    logging.error(f"PubMed Parse Error: {str(e)}")
+                    logging.error(f"PubMed Parse Error for ID {pubmed_id}: {str(e)}")
         return papers
     except Exception as e:
         logging.error(f"PubMed API Error: {str(e)}")
@@ -128,6 +128,9 @@ async def fetch_crossref_papers(query: str) -> list:
 # ------------------- Core Processing Pipeline -------------------
 async def process_papers(query: str) -> list:
     try:
+        # Get the current event loop
+        loop = asyncio.get_running_loop()
+        
         arxiv_results = await loop.run_in_executor(executor, fetch_arxiv_papers, query)
         other_sources = await asyncio.gather(
             fetch_pubmed_papers(query),
@@ -137,6 +140,7 @@ async def process_papers(query: str) -> list:
         
         all_papers = arxiv_results + [p for sublist in other_sources for p in sublist]
         if not all_papers:
+            logging.info("No papers found for query")
             return []
 
         df = pd.DataFrame(all_papers)
@@ -160,13 +164,12 @@ async def process_papers(query: str) -> list:
         
         return df.head(MAX_RESULTS).to_dict('records')
     except Exception as e:
-        logging.error(f"Processing Error: {str(e)}")
+        logging.error(f"Processing Error: {str(e)}", exc_info=True)  # Include stack trace
         return []
 
 # ------------------- API Endpoints -------------------
 @app.route('/search', methods=['POST'])
 async def search_endpoint():
-    # Optional API key check (comment out for public access)
     if request.headers.get('X-API-Key') != API_KEY:
         return jsonify({"error": "Unauthorized"}), 401
     
@@ -179,7 +182,7 @@ async def search_endpoint():
         results = await process_papers(query)
         return jsonify({"count": len(results), "results": results})
     except Exception as e:
-        logging.error(f"API Error: {str(e)}")
+        logging.error(f"API Error in search_endpoint: {str(e)}", exc_info=True)
         return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/health')
@@ -187,6 +190,5 @@ def health_check():
     return jsonify({"status": "healthy", "model": MODEL_NAME, "sources": PAPER_SOURCES})
 
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
     import uvicorn
     uvicorn.run(app, host='0.0.0.0', port=5000)
