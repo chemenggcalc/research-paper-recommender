@@ -18,5 +18,5 @@ COPY . .
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
-# Run application
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--timeout", "120", "--workers", "2", "app:app"]
+# Run application with Uvicorn
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "$PORT"]
