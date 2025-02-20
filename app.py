@@ -23,10 +23,15 @@ logging.basicConfig(level=logging.INFO)
 MODEL_NAME = 'paraphrase-MiniLM-L3-v2'
 API_KEY = os.getenv('API_KEY', 'my-secret-api-key-123')
 MAX_RESULTS = 10
-PAPER_SOURCES = ['arxiv', 'pubmed', 'semanticscholar', 'crossref']  # Updated to match implemented sources
+PAPER_SOURCES = ['arxiv', 'pubmed', 'semanticscholar', 'crossref']
 
 # Initialize model and components
-model = SentenceTransformer(MODEL_NAME)
+try:
+    model = SentenceTransformer(MODEL_NAME)
+except Exception as e:
+    logging.error(f"Failed to load SentenceTransformer model: {str(e)}", exc_info=True)
+    raise
+
 executor = ThreadPoolExecutor(max_workers=4)
 
 # ------------------- Paper Fetching Functions -------------------
@@ -128,9 +133,7 @@ async def fetch_crossref_papers(query: str) -> list:
 # ------------------- Core Processing Pipeline -------------------
 async def process_papers(query: str) -> list:
     try:
-        # Get the current event loop
         loop = asyncio.get_running_loop()
-        
         arxiv_results = await loop.run_in_executor(executor, fetch_arxiv_papers, query)
         other_sources = await asyncio.gather(
             fetch_pubmed_papers(query),
@@ -164,7 +167,7 @@ async def process_papers(query: str) -> list:
         
         return df.head(MAX_RESULTS).to_dict('records')
     except Exception as e:
-        logging.error(f"Processing Error: {str(e)}", exc_info=True)  # Include stack trace
+        logging.error(f"Processing Error: {str(e)}", exc_info=True)
         return []
 
 # ------------------- API Endpoints -------------------
@@ -174,6 +177,9 @@ async def search_endpoint():
         return jsonify({"error": "Unauthorized"}), 401
     
     data = request.get_json()
+    if not data or 'query' not in data:
+        return jsonify({"error": "Missing query in request body"}), 400
+    
     query = data.get('query', '').strip()
     if len(query) < 3:
         return jsonify({"error": "Query must be at least 3 characters"}), 400
@@ -191,4 +197,5 @@ def health_check():
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=5000)
+    port = int(os.getenv('PORT', 5000))
+    uvicorn.run(app, host='0.0.0.0', port=port)
